@@ -155,10 +155,3 @@ The script provides progress information and error handling for each repository 
 - **Branch not found**: Run `make list-branches` to see available branches
 - **Push rejected**: Ensure destination repository allows force pushing
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
