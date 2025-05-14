@@ -26,13 +26,11 @@ MAKEFILE_PATH="$(dirname "$(realpath "$0")")/git-sync.mk"
 REPO_BASE_DIR="/Users/jmabry/repos"
 
 # Define repositories to process - names relative to REPO_BASE_DIR
+# These should match the repository folder name 
 REPOSITORIES=(
-  "AP.Platforms.AICore.API"
-  "AP.Platforms.AICore.IAC"
-  "AP.Platforms.AIGateway.IAC"
+  "AP.Platforms.AIGateway.APIOps"
   "AP.Platforms.AIGateway.IAC"
   "roster-mapping-poc"
-
   # Add more repositories as needed
 )
 
@@ -69,6 +67,7 @@ for repo_name in "${REPOSITORIES[@]}"; do
   echo -e "${YELLOW}----------------------------------------------------${NC}"
   echo -e "${YELLOW}Processing repository: ${GREEN}${repo}${NC}"
   echo -e "${YELLOW}----------------------------------------------------${NC}"
+  echo -e "Repository name: ${GREEN}${repo_name}${NC}"
   
   # Check if directory exists
   if [ ! -d "$repo" ]; then
@@ -81,11 +80,11 @@ for repo_name in "${REPOSITORIES[@]}"; do
   echo "Changing to directory: $repo"
   cd "$repo"
   
-  # Run the makefile command
-  echo -e "Running: ${GREEN}make -f ${MAKEFILE_PATH} ${COMMAND}${NC}"
+  # Run the makefile command with the repository name
+  echo -e "Running: ${GREEN}make -f ${MAKEFILE_PATH} ${COMMAND} REPO_NAME=${repo_name}${NC}"
   echo
   
-  if make -f "$MAKEFILE_PATH" "$COMMAND"; then
+  if make -f "$MAKEFILE_PATH" "$COMMAND" REPO_NAME="${repo_name}"; then
     echo -e "${GREEN}Successfully completed ${COMMAND} for ${repo}${NC}"
   else
     echo -e "${RED}Failed to run ${COMMAND} for ${repo}${NC}"

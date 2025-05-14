@@ -20,17 +20,28 @@
 #   verify-remotes        - Check that both remotes are properly configured
 #   fetch-azure           - Fetch all branches from Azure DevOps
 #   list-branches         - List all branches available for syncing
-#   sync-all              - Force push all branches from Azure to GitHub
+#   sync-all              - Push all branches from Azure to GitHub
 #   sync-branch           - Sync a specific branch (use: make sync-branch BRANCH=main)
+#   verify-commits        - Verify last commit matches between Azure and GitHub
 #   full-sync             - Perform complete sync process (all steps)
+#   set-origin-to-github  - Change the origin remote to point to GitHub
 #
 # CONFIGURATION:
 #   Edit the variables at the top of this Makefile to match your repositories.
 # =============================================================================
 
-# EDIT THESE VARIABLES TO MATCH YOUR REPOSITORIES
-AZURE_URL ?= git@ssh.dev.azure.com:v3/alixpartners-dev/AP.Platforms.AICore/AP.Platforms.AICore.API 
-GITHUB_URL ?= git@github.com:Alix-Platforms/AP.Platforms.AICore.API.git
+# Base URLs and paths - will be combined with REPO_NAME to form full URLs
+AZURE_BASE_URL ?= git@ssh.dev.azure.com:v3/alixpartners-dev/AP.Platforms.AICore
+GITHUB_BASE_URL ?= git@github.com:Alix-Platforms
+
+# Repository name - to be provided when running make
+REPO_NAME ?= 
+
+# Build full URLs from base URLs and repository name
+AZURE_URL := $(if $(REPO_NAME),$(AZURE_BASE_URL)/$(REPO_NAME),$(AZURE_BASE_URL)/$(notdir $(CURDIR)))
+GITHUB_URL := $(if $(REPO_NAME),$(GITHUB_BASE_URL)/$(REPO_NAME).git,$(GITHUB_BASE_URL)/$(notdir $(CURDIR)).git)
+
+# Remote names
 AZURE_REMOTE ?= azure
 GITHUB_REMOTE ?= github
 DEFAULT_BRANCH ?= main
@@ -45,9 +56,11 @@ help:
 	@echo "  make verify-remotes   - Check that both remotes are properly configured"
 	@echo "  make fetch-azure      - Fetch all branches from Azure DevOps"
 	@echo "  make list-branches    - List all branches available for syncing"
-	@echo "  make sync-all         - Force push all branches from Azure to GitHub"
+	@echo "  make sync-all         - Push all branches from Azure to GitHub"
 	@echo "  make sync-branch      - Sync specific branch (use: make sync-branch BRANCH=main)"
+	@echo "  make verify-commits   - Verify last commit matches between Azure and GitHub"
 	@echo "  make full-sync        - Perform complete sync process (all steps)"
+	@echo "  make set-origin-to-github - Change the origin remote to point to GitHub"
 	@echo ""
 	@echo "Current configuration:"
 	@echo "  Azure DevOps: $(AZURE_URL) ($(AZURE_REMOTE))"
@@ -110,7 +123,7 @@ sync-branch: fetch-azure
 		echo "❌ Error: Branch '$(BRANCH)' does not exist in $(AZURE_REMOTE)"; \
 		exit 1; \
 	fi
-	git push --force $(GITHUB_REMOTE) "refs/remotes/$(AZURE_REMOTE)/$(BRANCH):refs/heads/$(BRANCH)"
+	git push $(GITHUB_REMOTE) "refs/remotes/$(AZURE_REMOTE)/$(BRANCH):refs/heads/$(BRANCH)"
 	@echo "✅ Branch $(BRANCH) synced to $(GITHUB_REMOTE)"
 
 # Sync all branches
@@ -124,12 +137,57 @@ sync-all: fetch-azure
 	fi; \
 	echo "Found $$(echo "$$BRANCHES" | wc -l | xargs) branches to sync"; \
 	for BRANCH in $$BRANCHES; do \
-		echo "Pushing $$BRANCH to $(GITHUB_REMOTE) (force)..."; \
-		git push --force $(GITHUB_REMOTE) "refs/remotes/$(AZURE_REMOTE)/$$BRANCH:refs/heads/$$BRANCH"; \
+		echo "Pushing $$BRANCH to $(GITHUB_REMOTE)..."; \
+		git push $(GITHUB_REMOTE) "refs/remotes/$(AZURE_REMOTE)/$$BRANCH:refs/heads/$$BRANCH"; \
 	done
 	@echo "✅ All branches from $(AZURE_REMOTE) have been pushed to $(GITHUB_REMOTE)"
 
+# Verify commits match between remotes
+.PHONY: verify-commits
+verify-commits: verify-remotes
+	@echo "Fetching latest from both remotes..."
+	git fetch $(AZURE_REMOTE) --prune
+	git fetch $(GITHUB_REMOTE) --prune
+	@echo "Checking commit synchronization between remotes..."
+	@BRANCHES=$$(git branch -r | grep "$(AZURE_REMOTE)/" | grep -v "HEAD" | sed "s/$(AZURE_REMOTE)\///"); \
+	MISMATCH=0; \
+	MATCH=0; \
+	for BRANCH in $$BRANCHES; do \
+		if git branch -r | grep -q "$(GITHUB_REMOTE)/$$BRANCH"; then \
+			AZURE_COMMIT=$$(git rev-parse $(AZURE_REMOTE)/$$BRANCH); \
+			GITHUB_COMMIT=$$(git rev-parse $(GITHUB_REMOTE)/$$BRANCH); \
+			if [ "$$AZURE_COMMIT" = "$$GITHUB_COMMIT" ]; then \
+				echo "✅ Branch $$BRANCH: Commits match ($$AZURE_COMMIT)"; \
+				MATCH=$$((MATCH+1)); \
+			else \
+				echo "❌ Branch $$BRANCH: Commits differ"; \
+				echo "   Azure:  $$AZURE_COMMIT"; \
+				echo "   GitHub: $$GITHUB_COMMIT"; \
+				MISMATCH=$$((MISMATCH+1)); \
+			fi; \
+		else \
+			echo "⚠️ Branch $$BRANCH: Not found in GitHub"; \
+			MISMATCH=$$((MISMATCH+1)); \
+		fi; \
+	done; \
+	echo "Summary: $$MATCH branches in sync, $$MISMATCH branches out of sync or missing"; \
+	if [ $$MISMATCH -gt 0 ]; then exit 1; fi
+
 # Full sync process
 .PHONY: full-sync
-full-sync: setup-remotes fetch-azure sync-all
+full-sync: setup-remotes fetch-azure sync-all verify-commits
 	@echo "✅ Full sync completed successfully"
+
+# Set origin remote to GitHub
+.PHONY: set-origin-to-github
+set-origin-to-github: verify-remotes
+	@echo "Changing origin remote to point to GitHub..."
+	@if git remote | grep -q "^origin$$"; then \
+		echo "Updating existing origin remote..."; \
+		git remote set-url origin $(GITHUB_URL); \
+	else \
+		echo "Creating new origin remote..."; \
+		git remote add origin $(GITHUB_URL); \
+	fi
+	@echo "✅ Origin remote now points to GitHub"
+	@git remote -v | grep origin
